@@ -1,91 +1,90 @@
 import os.path
 import pandas as pd
 from datetime import datetime
+from collections import Counter
 
-# We get the data of all files that have the extension '.xls'
-pyname = [name for name in os.listdir() if name.endswith('.xls')]
+# Get a list of all files with extension '.xls'
 
-# We take the first file from the list and read the data into a variable, replace the unknown data with 0
-file = pyname[0]
-excel_data_0 = pd.read_excel(file, 'Требование')
-excel_data_0 = excel_data_0.fillna(0)
+path = r'C:\Users\v.makarov\PycharmProjects\Material_consumption'
+pyname = [name for name in os.listdir(path) if name.endswith('.xls')]
 
-# During manual analysis, it was found that a cell with date data can be located in several places, so we introduce a
-# check for a cell with a date. if necessary, change the date format
-if excel_data_0.iloc[8, 5] == 0 and excel_data_0.iloc[6, 5] == 0:
-    date = excel_data_0.columns[7]
-else:
-    if excel_data_0.iloc[6, 5] != 0:
-        date = excel_data_0.iloc[6, 5]
+
+# A function that will fix the date data type
+def modify_time(data: datetime) -> float:
+    if str(type(data)) == "<class 'datetime.time'>":  # Checking if a variable belongs data to datetime.time
+        data = datetime(1970, 1, 1)  # If it belongs, then we equate the date to the beginning, since the variable
+        # contains only time data
+    elif type(data) == str:  # Checking if a variable belongs data to text
+        data = datetime.strptime(date, "%d.%m.%Y")  # If it belongs, then convert to datetime
     else:
-        date = excel_data_0.iloc[8, 5]
-if type(date) == str:
-    date = datetime.strptime(date, format='%Y-%m-%dT')
+        data = data  # If not, then leave it unchanged.
+    data = (data - datetime(1970, 1, 1)).total_seconds()  # Subtracts the original date from the date and converts to
+    # seconds
+    return data  # Return data
 
-# Choosing the necessary data for further analysis
-data_0 = excel_data_0.iloc[11:, [2, 6]]
-data_0 = data_0.rename(columns={data_0.columns[0]: 'Detal', data_0.columns[1]: date})
+
+# Function for data generation
+def add_requirement(k, temp_data, data):
+    name = 'x' + str(k)  # Name for column
+    temp_data = temp_data.rename(columns={temp_data.columns[0]: 'part', temp_data.columns[1]: name})  # Rename columns
+    temp_data.loc[-1] = ['time', date]  # Add first row 'time' that contains time on seconds
+    temp_data.index = temp_data.index + 1
+    temp_data = temp_data.sort_index()
+    temp_data = temp_data.groupby('part').sum().reset_index()  # Grouping the details
+    if len(data) == 0:  # If data is null
+        data = temp_data  # then we equate temp_data
+    else:
+        data = data.merge(temp_data, on='part', how='outer', indicator=False).fillna(0)  # Otherwise merge temp_data and
+        # data
+
+    return data  # Return data
+
+
+# We start a cycle that will go through all the files, select the necessary data
+
+requirement = pd.DataFrame()  # Creat null dataframe
+# Since the data is filled in differently, having examined the file manually, the places were identified, and where the
+# order date is located, and where the order data is located. Get the required rows and columns with "iloc".
+for i in range(len(pyname)):  # Let's loop through the list of files and get the data
+    temp = pd.read_excel(pyname[i], 'Требование').fillna(0)
+    if temp.iloc[8, 5] != 0:
+        date = temp.iloc[8, 5]
+    elif temp.iloc[6, 5] != 0:
+        date = temp.iloc[6, 5]
+    elif temp.iloc[6, 7] != 0:
+        date = temp.iloc[6, 7]
+    else:
+        date = temp.columns[7]
+    date = modify_time(date)
+    temp = temp.iloc[11:, [2, 6]]
+    requirement = add_requirement(i, temp, requirement)
 
 # Repeat all procedures for the second data sheet
-excel_data_2 = pd.read_excel(file, 'Накладная склада')
-excel_data_2 = excel_data_2.fillna(0)
-if excel_data_2.iloc[6, 7] == 0:
-    date_2 = excel_data_2.columns[7]
-else:
-    date_2 = excel_data_2.iloc[6, 7]
-if type(date_2) == str:
-    date_2 = datetime.strptime(date_2, format='%Y-%m-%dT')
-excel_data_2 = excel_data_2.iloc[127:, [1,8]]
-data_2 = excel_data_2.rename(columns={excel_data_2.columns[0]: 'Detal', excel_data_2.columns[1]: date_2})
+for j in range(len(pyname)):
+    temp = pd.read_excel(pyname[j], 'Накладная склада').fillna(0)
+    if temp.iloc[6, 7] == 0:
+        date = temp.columns[7]
+    else:
+        date = temp.iloc[6, 7]
+    date = modify_time(date)
+    temp = temp.iloc[127:250, [1, 8]]
+    requirement = add_requirement(j, temp, requirement)
+frequency = Counter(requirement.iloc[0])  # We create a dictionary that contains the order date and the number of times
+# this date is repeated
 
-# We start a cycle that will go through all the files, select the necessary data and add them to the initial
-# DataFrame with help 'merge'.
-for i in range(len(pyname)):
-    if i > 0:
-        file = pyname[i]
-        excel_data_1 = pd.read_excel(file, 'Требование')
-        excel_data_1 = excel_data_1.fillna(0)
-        if excel_data_1.iloc[8, 5] == 0 and excel_data_1.iloc[6, 5] == 0:
-            date = excel_data_1.columns[7]
-        else:
-            if excel_data_1.iloc[6, 5] != 0:
-                date = excel_data_1.iloc[6, 5]
-            else:
-                date = excel_data_1.iloc[8, 5]
-        if type(date) == str:
-            date = datetime.strptime(date, "%d.%m.%Y")
-        data_1 = excel_data_1 .iloc[11:, [2, 6]]
-        data_1 = data_1.rename(columns={data_1.columns[0]: 'Detal', data_1.columns[1]: date})
-        data_0 = pd.merge(data_0, data_1, on = 'Detal', how = 'outer', indicator= False)
+for i in frequency:  # Creat cycle for find columns with the same date
+    if frequency[i] > 1:  # If the frequency of the date is greater than one
+        filters = (requirement == i).any()  # Create variable 'filters' for find columns with the same date
+        name = (requirement.loc[:, filters]).columns  # Name of columns with the same date
+        requirement[i] = requirement[name].sum(axis=1)  # The sum of duplicates
+        requirement.loc[0, i] = i  # Rewrite the value of the time, as it has also developed
+        requirement = requirement.drop(name, axis=1)  # Delete duplicated columns
 
-# After creation, group data by column 'Detal'
-data_0 = data_0.groupby('Detal').sum().reset_index()
+name_time = requirement.values[:1]  # Get the list with the value, which contains the date of the orders placed
+requirement.columns = name_time[0]  # Rename all columns as date
+requirement = requirement.drop([0], axis=0)  # Delete row 'time'
+requirement.rename(columns={'time': 'part'}, inplace=True)  # Rename columns
 
-# Repeat all procedures for the second data sheet
-for i in range(len(pyname)):
-    if i > 0:
-        file = pyname[i]
-        excel_data_3 = pd.read_excel(file, 'Накладная склада')
-        excel_data_3 = excel_data_3.fillna(0)
-        excel_data_3 = pd.DataFrame(excel_data_3)
-        if excel_data_3.iloc[6, 7] == 0:
-            date_3 = excel_data_3.columns[7]
-        else:
-            date_3 = excel_data_3.iloc[6, 7]
-        if type(date_3) == str:
-            date_3 = datetime.strptime(date_3, format='%Y-%m-%dT')
-        excel_data_3 = excel_data_3.iloc[127:250, [1, 8]]
-        data_3 = excel_data_3
-        data_3 = excel_data_3.rename(columns={excel_data_3.columns[0]: 'Detal', excel_data_3.columns[1]: date_3})
-        data_2 = data_2.merge(data_3,  how = 'outer', left_on='Detal', right_on='Detal', indicator = False)
-        data_2 = data_2[data_2['Detal'] != 0]
-data_2 = data_2.groupby(data_2.columns[0]).sum().reset_index()
-
-# Combining the two DataFrame
-data = pd.merge(data_0, data_2, how='outer', on = 'Detal', indicator= False)
-data = data.groupby(data.columns[0]).sum().reset_index()
-
-# Save to file
-data.to_csv('data.csv')
-data.to_excel('data.xlsx')
-print('Выполнено!')
+requirement.to_csv('data.csv')  # Save dataframe csv
+requirement.to_excel('data.xlsx')  # Save dataframe excel
+print("Finish!")
